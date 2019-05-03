@@ -138,7 +138,7 @@ nodes:
       DB_USER_DATADOG: ${globals.db_user_datadog}
       PACKAGE_TYPE: ${globals.package_type}
       DX_VERSION: ${globals.dx_version}
-      _PROVIDE: MariaDB
+      _PROVIDE: ${globals.dbscheme}
       _ROLE: master
       envName: ${globals.shortdomain}
       DB_ENDPOINT: mysqldb
@@ -258,10 +258,12 @@ actions:
         logrotate -f /etc/logrotate.d/mysql
         service mysql start
       user: root
-      # - cmd[${nodes.sqldb.master.id}]: |-
-      #     wget -O setupUser.sh ${baseUrl}/scripts/setupUser.sh
-      #     bash setupUser.sh ${globals.db_user} ${globals.db_pass}
-      #   user: mysql
+    - if (settings.dbscheme == 'lonely'):
+      - log: "## We just need one lonely, single, master db node, so let's handle it"
+      - cmd[${nodes.sqldb.master.id}]: |-
+          wget -O setupUser.sh ${baseUrl}/scripts/setupUser.sh
+          bash setupUser.sh ${globals.db_user} ${globals.db_pass}
+        user: root
 
   createJahiaDatabase:
     - cmd[${nodes.sqldb.master.id}]: |-
@@ -464,11 +466,12 @@ settings:
     caption: Number of DX browsing nodes
     vtype: text
     required: true
+    default: 2
 
   - caption: DB stack
     type: list
     name: stack
-    default: mysql
+    default: mariadb-dockerized
     required: true
     values:        
       - value: mysql
@@ -493,6 +496,8 @@ settings:
               caption: Multi Group Replication              
 
           mariadb-dockerized:    
+            - value: lonely
+              caption: One, lonely, sad and single master
             - value: slave
               caption: Master-Slave with extra slaves
             - value: master
@@ -503,7 +508,7 @@ settings:
   - type: checkbox
     name: is_proxysql
     caption: Add ProxySQL for SQL Load Balancing
-    value: true
+    value: false
 
   - caption: None
     inputType: hidden
@@ -522,6 +527,8 @@ settings:
     name: dbnodes
     dependsOn:                 
       scheme:
+          lonely:
+            - value: 1
           slave:
             - value: 2
           master:    
