@@ -324,6 +324,7 @@ actions:
         echo $SUPER_USER_PASSWORD > $DATA_PATH/digital-factory-data/root.pwd
         chown -R tomcat:tomcat $DATA_PATH/digital-factory-data/root.pwd
         sed -i "2i JMX_OPTS=\-XX:+UseParallelGC" /opt/tomcat/conf/tomcat-env.sh
+        rm -rf /data/jahia
     - if ( settings.dbscheme == 'galera'):
       - log: "## Now settings context.xml for directly use the 3 MariaDB Galera server (no proxysql)"
       - cmd[${this}]: |-    
