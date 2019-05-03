@@ -1,6 +1,6 @@
 ---
 type: install
-version: 1.5
+version: 1.5.2
 name: Jahia - Digital Experience Manager
 logo: /images/jahia-logo-70x70.png
 id: jahia-dx-universal
@@ -24,6 +24,11 @@ globals:
   operating_mode: ${settings.mode}
   datadog_key: ${settings.ddogApikey}
   shortdomain: ${settings.shortdomain}
+  dbbaseUrl: https://raw.githubusercontent.com/jelastic-jps/mysql-cluster/master
+  dbscheme: ${settings.dbscheme}
+  dbnodeType: ${settings.dbnodeType}
+  dbnodes: ${settings.dbnodes}
+  is_proxysql: ${settings.is_proxysql}
   xms: 256M
   xmx: 3584M 
   java_opts:
@@ -69,6 +74,7 @@ nodes:
       _PROVIDE: DX
       _ROLE: Browsing
       envName: ${globals.shortdomain}
+      DB_ENDPOINT: mysqldb
     
   - image: jahiadev/processing:${globals.dx_version}
     displayName: Processing
@@ -77,7 +83,8 @@ nodes:
     nodeGroup: proc
     links: 
       - sqldb:mysqldb
-      - nosqldb:redis
+        # - sqldb:mysqldb
+        # - nosqldb:redis
     startServiceOnCreation: false
     env: 
       DB_USER: ${globals.db_user}
@@ -96,14 +103,37 @@ nodes:
       _PROVIDE: DX
       _ROLE: Processing
       envName: ${globals.shortdomain}
+      DB_ENDPOINT: mysqldb
 
-  - nodeType: mariadb-dockerized
-    tag: 10.2.12 # 10.3.9
-    displayName: MariaDB
-    count: 1
-    cloudlets: 40
+#   - nodeType: mariadb-dockerized
+#     tag: 10.2.12 # 10.3.9
+#     displayName: MariaDB
+#     count: 1
+#     cloudlets: 40
+#     nodeGroup: sqldb
+#     env:
+#       DATADOGAPIKEY: ${globals.datadog_key}
+#       DB_USER_DATADOG: ${globals.db_user_datadog}
+#       PACKAGE_TYPE: ${globals.package_type}
+#       DX_VERSION: ${globals.dx_version}
+#       _PROVIDE: MariaDB
+#       _ROLE: master
+#       envName: ${globals.shortdomain}
+
+  - nodeType: ${globals.dbnodeType}
     nodeGroup: sqldb
+    count: ${globals.dbnodes}
+    cluster:
+      scheme: "${settings.dbscheme}"
+      db_user: ${globals.db_user}
+      db_pass: ${globals.db_pass}
+    cloudlets: 40
     env:
+      ON_ENV_INSTALL: ${globals.dbbaseUrl}/addons/auto-clustering/auto-cluster.jps
+      SCHEME: ${globals.dbscheme}
+      DB_USER: ${globals.db_user}
+      DB_PASS: ${globals.db_pass}
+      IS_PROXYSQL: ${globals.is_proxysql}
       DATADOGAPIKEY: ${globals.datadog_key}
       DB_USER_DATADOG: ${globals.db_user_datadog}
       PACKAGE_TYPE: ${globals.package_type}
@@ -111,7 +141,9 @@ nodes:
       _PROVIDE: MariaDB
       _ROLE: master
       envName: ${globals.shortdomain}
+      DB_ENDPOINT: mysqldb
     
+
 # --Events --
 
 onUninstall:
@@ -122,10 +154,16 @@ onUninstall:
 onInstall:
   - if (/\/raw\/[0-9]+\.[0-9]+$/.test(baseUrl)):
     - log: "## git repo branch is prod"
-    - api [cp,proc,sqldb]: env.control.AddContainerEnvVars
+    - api [*]: env.control.AddContainerEnvVars
       vars: {"PACKAGE_TYPE": "prod"}
+  - if ( '${globals.is_proxysql}' == 'true'):
+    - log: "## is_proxysql is true"
+    - api[*]: env.control.AddContainerEnvVars
+      vars: {"DB_ENDPOINT": "proxy"} 
+    - api[proxy]: env.control.AddContainerEnvVars
+      vars: {"envName": "${globals.shortdomain}", "_PROVIDE": "ProxySQL", "DX_VERSION": "${globals.dx_version}", "_ROLE": "ProxySQL", "jahia_cfg_operatingMode": "${globals.operating_mode}", "DATADOGAPIKEY": "${globals.datadog_key}"}
 
-  - cmd [sqldb]:
+  - cmd [sqldb, proxy]:
     - 'USER=$(grep -i ''x:''$(cat /etc/passwd | grep jelastic:x | cut -d'':'' -f 3) /etc/passwd | grep -v jelastic:x | cut -d: -f1)'
     - 'touch /etc/sudoers.d/sudo'
     - 'echo "$USER ALL=NOPASSWD: ALL" >> /etc/sudoers.d/sudo'
@@ -160,6 +198,7 @@ onInstall:
   
   - setupDatadogAgent: cp
   - setupDatadogAgent: proc
+  - setupDatadogAgentProxySql: proxy
   - setupDatadogAgentSql: sqldb
 
 onAfterServiceScaleOut[cp]:
@@ -195,6 +234,22 @@ onAfterRedeployContainer[proc]:
 
 actions:
 
+  #installDBnodes:
+  #  - install:
+  #     jps: ${globals.dbbaseUrl}/addons/auto-clustering/auto-cluster.jps
+  #     shortdomain: ${settings.shortdomain}
+  #     settings:
+  #       shortdomain: ${settings.shortdomain}
+  #       dxVersion: ${globals.dx_version}
+  #       ddogApikey: ${settings.ddogApikey}
+  #       nodeType: ${settings.dbnodeType}
+  #       scheme: ${settings.dbscheme}
+  #       nodes: ${settings.dbnodes}
+  #       stack: ${settings.stack}
+  #       is_proxysql: ${settings.is_proxysql}
+  #       db_user: ${globals.db_user}
+  #       db_pass: ${globals.db_pass}
+
   setupSqlDB:
     - cmd[sqldb]: |-
         service mysql stop
@@ -202,22 +257,30 @@ actions:
         sed -i 's/# create 600 mysql mysql/create 644 mysql adm/' /etc/logrotate.d/mysql
         logrotate -f /etc/logrotate.d/mysql
         service mysql start
-        wget -O setupUser.sh ${baseUrl}/scripts/setupUser.sh
-        bash setupUser.sh ${globals.db_user} ${globals.db_pass}
       user: root
+      # - cmd[${nodes.sqldb.master.id}]: |-
+      #     wget -O setupUser.sh ${baseUrl}/scripts/setupUser.sh
+      #     bash setupUser.sh ${globals.db_user} ${globals.db_pass}
+      #   user: mysql
 
   createJahiaDatabase:
-    - cmd[sqldb]: |-
+    - cmd[${nodes.sqldb.master.id}]: |-
         mysql -u${globals.db_user} -p${globals.db_pass} -e "CREATE DATABASE IF NOT EXISTS jahia CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
       user: root
     - cmd[${nodes.proc.first.id}]: cat $DATA_PATH/digital-factory-data/db/sql/schema/mysql/*.sql | mysql -h mysqldb -u$DB_USER -p$DB_PASSWORD -f jahia
     
   createDataDogUser:
-    - cmd[sqldb]: |-
-        mysql -u${globals.db_user} -p${globals.db_pass} -e "CREATE USER 'datadog'@'127.0.0.1' IDENTIFIED BY '${DB_USER_DATADOG}';"
-        mysql -u${globals.db_user} -p${globals.db_pass} -e "GRANT REPLICATION CLIENT ON *.* TO 'datadog'@'127.0.0.1' WITH MAX_USER_CONNECTIONS 5;"
-        mysql -u${globals.db_user} -p${globals.db_pass} -e "GRANT PROCESS ON *.* TO 'datadog'@'127.0.0.1';"
-        mysql -u${globals.db_user} -p${globals.db_pass} -e "GRANT SELECT ON performance_schema.* TO 'datadog'@'127.0.0.1';"
+    - cmd[${nodes.sqldb.master.id}]: |-
+        mysql -u${globals.db_user} -p${globals.db_pass} -e "CREATE USER 'datadog'@'localhost' IDENTIFIED BY '${DB_USER_DATADOG}';"
+        mysql -u${globals.db_user} -p${globals.db_pass} -e "GRANT REPLICATION CLIENT ON *.* TO 'datadog'@'localhost' WITH MAX_USER_CONNECTIONS 5;"
+        mysql -u${globals.db_user} -p${globals.db_pass} -e "GRANT PROCESS ON *.* TO 'datadog'@'localhost';"
+        mysql -u${globals.db_user} -p${globals.db_pass} -e "GRANT SELECT ON performance_schema.* TO 'datadog'@'localhost';"
+      user: root
+    - cmd[proxy]: |-
+        mysql -e "CREATE USER 'datadog'@'localhost' IDENTIFIED BY '${DB_USER_DATADOG}';"
+        mysql -e "GRANT REPLICATION CLIENT ON *.* TO 'datadog'@'localhost' WITH MAX_USER_CONNECTIONS 5;"
+        mysql -e "GRANT PROCESS ON *.* TO 'datadog'@'localhost';"
+        mysql -e "GRANT SELECT ON performance_schema.* TO 'datadog'@'localhost';"
       user: root
       
   installMaven:
@@ -236,13 +299,17 @@ actions:
         cp -rf $DATA_PATH/jahia/tomcat/webapps/* $STACK_PATH/webapps
         chown -R tomcat:tomcat $STACK_PATH/webapps
         cd /opt/tomcat/webapps/ROOT/WEB-INF/lib/
-        mngr_pwd=$(/usr/java/latest/bin/jjs -cp $(find . -name jahia-commons-*.jar):$(find . -name jasypt-*.jar) -scripting <<< "print(org.jahia.commons.encryption.EncryptionUtils.pbkdf2Digest(\$ENV.MANAGER_PASSWORD, \"p\"))")
+        mngr_pwd=$(/usr/java/latest/bin/jjs -cp $(find . -name jahia-commons-*.jar):$(find . -name jasypt-*.jar) -scripting <<< "print(org.jahia.commons.encryption.EncryptionUtils.pbkdf2Digest(\$ENV.MANAGER_PASSWORD, \"p\"))" > /tmp/tools && awk '$1!="jjs>"' /tmp/tools)
         sed -i "s|^jahiaToolManagerPassword .*$|jahiaToolManagerPassword = $mngr_pwd|" $STACK_PATH/conf/digital-factory-config/jahia/jahia.properties
         sed -i "s/operatingMode/#operatingMode/" $STACK_PATH/conf/digital-factory-config/jahia/jahia.properties
         sed -i "s#\${HOST_NAME}#$HOSTNAME#g" $STACK_PATH/conf/digital-factory-config/jahia/jahia.node.properties
         echo $SUPER_USER_PASSWORD > $DATA_PATH/digital-factory-data/root.pwd
         chown -R tomcat:tomcat $DATA_PATH/digital-factory-data/root.pwd
         sed -i "2i JMX_OPTS=\-XX:+UseParallelGC" /opt/tomcat/conf/tomcat-env.sh
+    - if ( settings.dbscheme == 'galera'):
+      - log: "## Now settings context.xml for directly use the 3 MariaDB Galera server (no proxysql)"
+      - cmd[${this}]: |-    
+          sed 's;\(url="jdbc:mariadb:\)[^"]\+\(/jahia[^"]\+\);\1failover://mysqldb_1,mysqldb_2,mysqldb_3\2;' -i /opt/tomcat/webapps/ROOT/META-INF/context.xml
         
   setupDatadogAgent:
     - if (settings.mode == 'production'):
@@ -268,6 +335,46 @@ actions:
             systemctl restart crond datadog-agent
           user: root
             
+  setupDatadogAgentProxySql:
+    - if (settings.mode == 'production'):
+        forEach(nodes.${this}):
+          cmd[${@i.id}]: |- 
+            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)" 
+            echo "hostname: ${this}.${@i.id}" >> /etc/datadog-agent/datadog.yaml
+            sed -i 's/# logs_enabled: false/logs_enabled: true/' /etc/datadog-agent/datadog.yaml
+            echo "tags:" >> /etc/datadog-agent/datadog.yaml
+            echo " - env:${PACKAGE_TYPE}" >> /etc/datadog-agent/datadog.yaml
+            echo " - product:dx" >> /etc/datadog-agent/datadog.yaml
+            echo " - version:${DX_VERSION}" >> /etc/datadog-agent/datadog.yaml
+            echo " - envname:${env.envName}" >> /etc/datadog-agent/datadog.yaml
+            echo " - provide:${_PROVIDE}" >> /etc/datadog-agent/datadog.yaml
+            echo " - role:${_ROLE}" >> /etc/datadog-agent/datadog.yaml
+            echo " - envmode:${jahia_cfg_operatingMode}" >> /etc/datadog-agent/datadog.yaml
+            chmod 755 /var/log/mysql/mysqld.log -R
+            echo "---" > /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "logs:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "  - type: file" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    path: /var/log/mysql/mysqld.log" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    source: mysql" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    service: dx" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "init_config:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "instances:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "  - server: 127.0.0.1" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    user: datadog" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    pass: ${DB_USER_DATADOG}" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    sock: /var/lib/mysql/mysql.sock" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    tags:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "      - 'env:${PACKAGE_TYPE}'" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "      - 'role:proxysql'" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "options:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   replication: false" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   galera_cluster: true" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            wget -O /usr/local/bin/set_dd_tags.sh ${baseUrl}/scripts/set_dd_tags.sh
+            wget -O /etc/cron.d/set_dd_tags_cron ${baseUrl}/configs/set_dd_tags_cron
+            chmod u+x /usr/local/bin/set_dd_tags.sh
+            systemctl restart crond datadog-agent
+          user: root 
+
   setupDatadogAgentSql:
     - if (settings.mode == 'production'):
         forEach(nodes.${this}):
@@ -289,18 +396,24 @@ actions:
             echo "  - type: file" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "    path: /var/log/mysql/mysqld.log" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "    source: mysql" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
-            echo "    service: mydatabase" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    service: dx" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "init_config:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "instances:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "  - server: 127.0.0.1" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "    user: datadog" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "    pass: ${DB_USER_DATADOG}" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "    sock: /var/lib/mysql/mysql.sock" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "    tags:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "      - 'env:${PACKAGE_TYPE}'" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "      - 'role:database'" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             echo "options:" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
-            echo "   replication: 0" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
-            echo "   galera_cluster: 1" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   replication: false" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   galera_cluster: true" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   extra_status_metrics: true" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   extra_innodb_metrics: true" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   extra_performance_metrics: true" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   schema_size_metrics: true" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
+            echo "   disable_innodb_metrics: false" >> /etc/datadog-agent/conf.d/mysql.d/conf.yaml
             wget -O /usr/local/bin/set_dd_tags.sh ${baseUrl}/scripts/set_dd_tags.sh
             wget -O /etc/cron.d/set_dd_tags_cron ${baseUrl}/configs/set_dd_tags_cron
             chmod u+x /usr/local/bin/set_dd_tags.sh
@@ -351,6 +464,76 @@ settings:
     caption: Number of DX browsing nodes
     vtype: text
     required: true
+
+  - caption: DB stack
+    type: list
+    name: stack
+    default: mysql
+    required: true
+    values:        
+      - value: mysql
+        caption: MySQL CE
+      - value: mariadb-dockerized
+        caption: MariaDB
+    
+  - caption: DB topology
+    type: list
+    name: dbscheme
+    required: true      
+    dependsOn:                 
+      stack:
+          mysql:
+            - value: slave
+              caption: Master-Slave with extra slaves
+            - value: master
+              caption: Master-Master with extra slaves
+            - value: single
+              caption: Single Group Replication
+            - value: multi
+              caption: Multi Group Replication              
+
+          mariadb-dockerized:    
+            - value: slave
+              caption: Master-Slave with extra slaves
+            - value: master
+              caption: Master-Master with extra slaves
+            - value: galera
+              caption: Galera Cluster
+
+  - type: checkbox
+    name: is_proxysql
+    caption: Add ProxySQL for SQL Load Balancing
+    value: true
+
+  - caption: None
+    inputType: hidden
+    type: list
+    name: dbnodeType
+    dependsOn:                 
+      stack:
+          mysql:
+            - value: mysql
+          mariadb-dockerized:    
+            - value: mariadb-dockerized
+
+  - caption: None
+    inputType: hidden
+    type: list
+    name: dbnodes
+    dependsOn:                 
+      scheme:
+          slave:
+            - value: 2
+          master:    
+            - value: 2
+          single:
+            - value: 3
+          multi:    
+            - value: 3
+          galera:    
+            - value: 3
+
+
   - name: shortdomain
     type: envname
     caption: Environment
