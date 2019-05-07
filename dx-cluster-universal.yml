@@ -127,13 +127,13 @@ nodes:
   - nodeType: ${globals.dbnodeType}
     nodeGroup: sqldb
     count: ${globals.dbnodes}
-    cluster:
-      scheme: "${settings.dbscheme}"
-      db_user: ${globals.db_user}
-      db_pass: ${globals.db_pass}
-    cloudlets: 40
+    #    cluster:
+    #      scheme: "${settings.dbscheme}"
+    #      db_user: ${globals.db_user}
+    #      db_pass: ${globals.db_pass}
+    #    cloudlets: 40
     env:
-      ON_ENV_INSTALL: ${globals.dbbaseUrl}/addons/auto-clustering/auto-cluster.jps
+      # ON_ENV_INSTALL: ${globals.dbbaseUrl}/addons/auto-clustering/auto-cluster.jps
       SCHEME: ${globals.dbscheme}
       DB_USER: ${globals.db_user}
       DB_PASS: ${globals.db_pass}
@@ -262,6 +262,15 @@ actions:
       user: root
 
   setupSqlDB:
+    - if (globals.dbnodes == 3):
+      - install:
+        jps: https://raw.githubusercontent.com/jelastic-jps/mysql-cluster/master/scripts/galera-configuration.jps
+        shortdomain: ${settings.shortdomain}
+        settings:
+          db_user: ${globals.db_user}
+          db_pass: ${globals.db_pass}
+
+
     - log: "## Set good mysql owners and right on ${this}"
     - cmd[sqldb]: |-
         service mysql stop
