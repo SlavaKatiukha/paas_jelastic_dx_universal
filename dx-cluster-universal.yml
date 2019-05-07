@@ -262,7 +262,7 @@ actions:
       user: root
 
   setupSqlDB:
-    - if (globals.dbnodes == 3):
+    - if (globals.dbscheme == "galera"):
       - install:
         jps: https://raw.githubusercontent.com/jelastic-jps/mysql-cluster/master/scripts/galera-configuration.jps
         shortdomain: ${settings.shortdomain}
