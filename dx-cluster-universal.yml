@@ -14,7 +14,7 @@ baseUrl: https://github.com/Jahia/paas_jelastic_dx_universal/raw/1.0
 globals:
   db_user: jahia-db-${fn.random}
   db_pass: ${fn.password(20)}
-  db_user_datadog: ${fn.password(20)}  
+  db_user_datadog: ${fn.password(20)}
   redis_pass: ${fn.password(20)}
   mngr_user: manager
   mngr_pass: ${settings.toolspwd}
@@ -30,7 +30,7 @@ globals:
   dbnodes: ${settings.dbnodes}
   is_proxysql: ${settings.is_proxysql}
   xms: 256M
-  xmx: 3584M 
+  xmx: 3584M
   java_opts:
     -DDB_USER=${DB_USER}
     -DDB_PASSWORD=${DB_PASSWORD}
@@ -44,16 +44,16 @@ globals:
     -Dcom.sun.management.jmxremote.ssl=false
     -Dcom.sun.management.jmxremote.authenticate=false
     -XX:MaxPermSize=512m
-    -XX:+HeapDumpOnOutOfMemoryError 
-    -XX:+PrintConcurrentLocks  
-    -XX:+UseParallelGC 
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:+PrintConcurrentLocks
+    -XX:+UseParallelGC
   region1: ${settings.regions[0]}
   region2: ${settings.regions[1]}
   region3: ${settings.regions[2]}
 
 ssl: true
 skipNodeEmails: true
-nodes:  
+nodes:
   - image: jahiadev/browsing:${globals.dx_version}
     displayName: Browsing
     count: ${settings.browsingCount}
@@ -61,7 +61,7 @@ nodes:
     nodeGroup: cp
     links: sqldb:mysqldb
     startServiceOnCreation: false
-    env: 
+    env:
       DB_USER: ${globals.db_user}
       DB_PASSWORD: ${globals.db_pass}
       MANAGER_USER: ${globals.mngr_user}
@@ -79,18 +79,18 @@ nodes:
       _ROLE: Browsing
       envName: ${globals.shortdomain}
       DB_ENDPOINT: mysqldb
-    
+
   - image: jahiadev/processing:${globals.dx_version}
     displayName: Processing
     count: ${settings.processingCount}
     cloudlets: 40
     nodeGroup: proc
-    links: 
+    links:
       - sqldb:mysqldb
-        # - sqldb:mysqldb
-        # - nosqldb:redis
+      # - sqldb:mysqldb
+      # - nosqldb:redis
     startServiceOnCreation: false
-    env: 
+    env:
       DB_USER: ${globals.db_user}
       DB_PASSWORD: ${globals.db_pass}
       MANAGER_USER: ${globals.mngr_user}
@@ -109,20 +109,20 @@ nodes:
       envName: ${globals.shortdomain}
       DB_ENDPOINT: mysqldb
 
-#   - nodeType: mariadb-dockerized
-#     tag: 10.2.12 # 10.3.9
-#     displayName: MariaDB
-#     count: 1
-#     cloudlets: 40
-#     nodeGroup: sqldb
-#     env:
-#       DATADOGAPIKEY: ${globals.datadog_key}
-#       DB_USER_DATADOG: ${globals.db_user_datadog}
-#       PACKAGE_TYPE: ${globals.package_type}
-#       DX_VERSION: ${globals.dx_version}
-#       _PROVIDE: MariaDB
-#       _ROLE: master
-#       envName: ${globals.shortdomain}
+      # - nodeType: mariadb-dockerized
+      #   tag: 10.2.12 # 10.3.9
+      #   displayName: MariaDB
+      #   count: 1
+      #   cloudlets: 40
+      #   nodeGroup: sqldb
+      #   env:
+      #     DATADOGAPIKEY: ${globals.datadog_key}
+      #     DB_USER_DATADOG: ${globals.db_user_datadog}
+      #     PACKAGE_TYPE: ${globals.package_type}
+      #     DX_VERSION: ${globals.dx_version}
+      #     _PROVIDE: MariaDB
+      #     _ROLE: master
+      #     envName: ${globals.shortdomain}
 
   - nodeType: ${globals.dbnodeType}
     nodeGroup: sqldb
@@ -146,80 +146,80 @@ nodes:
       _ROLE: master
       envName: ${globals.shortdomain}
       DB_ENDPOINT: mysqldb
-    
+
 
 # --Events --
 
 onUninstall:
   cmd [${targetNodes.nodeGroup}]:
-  - sed -i -e 's/.*NOPASSWD.*//g' /etc/sudoers.d/sudo
+    - sed -i -e 's/.*NOPASSWD.*//g' /etc/sudoers.d/sudo
   user: root
 
 onInstall:
   - log: "## Beginning installation of DX"
   - if (/\/raw\/[0-9]+\.[0-9]+$/.test(baseUrl)):
-    - log: "## git repo branch is prod"
-    - api [*]: env.control.AddContainerEnvVars
-      vars: {"PACKAGE_TYPE": "prod"}
+      - log: "## git repo branch is prod"
+      - api [*]: env.control.AddContainerEnvVars
+        vars: {"PACKAGE_TYPE": "prod"}
   - if ( '${globals.is_proxysql}' == 'true'):
-    - log: "## is_proxysql is true"
-    - api[*]: env.control.AddContainerEnvVars
-      vars: {"DB_ENDPOINT": "proxy"} 
-    - api[proxy]: env.control.AddContainerEnvVars
-      vars: {"envName": "${globals.shortdomain}", "_PROVIDE": "ProxySQL", "DX_VERSION": "${globals.dx_version}", "_ROLE": "ProxySQL", "jahia_cfg_operatingMode": "${globals.operating_mode}", "DATADOGAPIKEY": "${globals.datadog_key}"}
+      - log: "## is_proxysql is true"
+      - api[*]: env.control.AddContainerEnvVars
+        vars: {"DB_ENDPOINT": "proxy"}
+      - api[proxy]: env.control.AddContainerEnvVars
+        vars: {"envName": "${globals.shortdomain}", "_PROVIDE": "ProxySQL", "DX_VERSION": "${globals.dx_version}", "_ROLE": "ProxySQL", "jahia_cfg_operatingMode": "${globals.operating_mode}", "DATADOGAPIKEY": "${globals.datadog_key}"}
 
   - setSudoer: sqldb
   - if ( '${globals.is_proxysql}' == 'true' ):
-    - setSudoer: proxy
-    
+      - setSudoer: proxy
+
   - environment.control.ApplyNodeGroupData [proc]:
-      data: 
+      data:
         dxVersion: ${globals.dx_version}
         packageType: dev
   - setupSqlDB
   - if (settings.skipStart != 'true'): createJahiaDatabase
   - if (settings.mode == 'production'): createDataDogUser
-  
+
   - copyApp: proc
-  - if (settings.mode == 'development'):  
-    - installMaven: proc
+  - if (settings.mode == 'development'):
+      - installMaven: proc
   - if (settings.skipStart != 'true'):
-    - api: env.control.ExecDockerRunCmd
-      nodeId: ${nodes.proc.first.id}
-  
+      - api: env.control.ExecDockerRunCmd
+        nodeId: ${nodes.proc.first.id}
+
   - sleep:
-    - milliseconds: 120000
-  
+      - milliseconds: 120000
+
   - copyApp: cp
   - if (settings.mode == 'development'):
-    - installMaven: cp
+      - installMaven: cp
   - if (settings.skipStart != 'true'):
-    - forEach(nodes.cp):
-        api: env.control.ExecDockerRunCmd
-        nodeId: ${@i.id} 
-  
+      - forEach(nodes.cp):
+          api: env.control.ExecDockerRunCmd
+          nodeId: ${@i.id}
+
   - setupDatadogAgent: cp
   - setupDatadogAgent: proc
   - if ( '${globals.is_proxysql}' == 'true' ):
-    - setupDatadogAgentProxySql: proxy
+      - setupDatadogAgentProxySql: proxy
   - setupDatadogAgentSql: sqldb
 
 onAfterServiceScaleOut[cp]:
   forEach(event.response.nodes):
     - copyApp: ${@i.id}
     - if (settings.mode == 'development'):
-      - installMaven: ${@i.id}   
+        - installMaven: ${@i.id}
     - setupDatadogAgentPerNode: ${@i.id}
 
 onBeforeRedeployContainer:
- - cmd [cp,proc]:
+  - cmd [cp,proc]:
     rm -rf $DATA_PATH/jahia/*
-        
+
 onAfterRedeployContainer[cp]:
   - copyApp: cp
   - if (settings.mode == 'development'):
     - installMaven: cp
-  - cmd[cp]:  
+  - cmd[cp]:
     - chkconfig --add tomcat
     - chkconfig --level 3 tomcat on
     - service tomcat start
@@ -228,11 +228,11 @@ onAfterRedeployContainer[proc]:
   - copyApp: proc
   - if (settings.mode == 'development'):
     - installMaven: proc
-  - cmd[proc]:  
+  - cmd[proc]:
     - chkconfig --add tomcat
     - chkconfig --level 3 tomcat on
     - service tomcat start
-    
+
 #-- Actions --
 
 actions:
@@ -293,7 +293,7 @@ actions:
       user: root
     - log: "## Import DX schema in database"
     - cmd[${nodes.proc.first.id}]: cat $DATA_PATH/digital-factory-data/db/sql/schema/mysql/*.sql | mysql -h mysqldb -u$DB_USER -p$DB_PASSWORD -f jahia
-    
+
   createDataDogUser:
     - log: "## Create Datadog database user"
     - cmd[${nodes.sqldb.master.id}]: |-
@@ -310,7 +310,7 @@ actions:
           mysql -e "GRANT PROCESS ON *.* TO 'datadog'@'localhost';"
           mysql -e "GRANT SELECT ON performance_schema.* TO 'datadog'@'localhost';"
         user: root
-      
+
   installMaven:
     - log: "## Install Maven on ${this}"
     - cmd[${this}]: |-
@@ -320,11 +320,11 @@ actions:
         chown tomcat:tomcat -R /opt/apache-maven*
         sed -i "2i MAVEN_OPTS=\-XX:+UseParallelGC" /opt/apache-maven*/bin/mvn
         sed -i "2i _JAVA_OPTIONS=" /opt/apache-maven*/bin/mvn
-        
-  copyApp:  
+
+  copyApp:
     - log: "## Copying DX and settings is properties"
     - cmd[${this}]: |-
-        [ "${this}" == "proc" ] && role="processing" || role="browsing" 
+        [ "${this}" == "proc" ] && role="processing" || role="browsing"
         rm -rf $STACK_PATH/webapps/*
         cp -rf $DATA_PATH/jahia/tomcat/webapps/* $STACK_PATH/webapps
         chown -R tomcat:tomcat $STACK_PATH/webapps
@@ -339,15 +339,15 @@ actions:
         rm -rf /data/jahia
     - if ( settings.dbscheme == 'galera'):
       - log: "## Now settings context.xml for directly use the 3 MariaDB Galera server (no proxysql)"
-      - cmd[${this}]: |-    
+      - cmd[${this}]: |-
           sed 's;\(url="jdbc:mariadb:\)[^"]\+\(/jahia[^"]\+\);\1failover://mysqldb_1,mysqldb_2,mysqldb_3\2;' -i /opt/tomcat/webapps/ROOT/META-INF/context.xml
-        
+
   setupDatadogAgent:
     - log: "## Install Datadog agent on ${this}"
     - if (settings.mode == 'production'):
         forEach(nodes.${this}):
-          cmd[${@i.id}]: |- 
-            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)" 
+          cmd[${@i.id}]: |-
+            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)"
             echo "hostname: ${this}.${@i.id}" >> /etc/datadog-agent/datadog.yaml
             sed -i 's/# logs_enabled: false/logs_enabled: true/' /etc/datadog-agent/datadog.yaml
             echo "tags:" >> /etc/datadog-agent/datadog.yaml
@@ -366,13 +366,13 @@ actions:
             /usr/local/bin/set_dd_tags.sh
             systemctl restart crond datadog-agent
           user: root
-            
+
   setupDatadogAgentProxySql:
     - log: "## Install Datadog agent on ${this}"
     - if (settings.mode == 'production'):
         forEach(nodes.${this}):
-          cmd[${@i.id}]: |- 
-            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)" 
+          cmd[${@i.id}]: |-
+            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)"
             echo "hostname: ${this}.${@i.id}" >> /etc/datadog-agent/datadog.yaml
             sed -i 's/# logs_enabled: false/logs_enabled: true/' /etc/datadog-agent/datadog.yaml
             echo "tags:" >> /etc/datadog-agent/datadog.yaml
@@ -406,14 +406,14 @@ actions:
             wget -O /etc/cron.d/set_dd_tags_cron ${baseUrl}/configs/set_dd_tags_cron
             chmod u+x /usr/local/bin/set_dd_tags.sh
             systemctl restart crond datadog-agent
-          user: root 
+          user: root
 
   setupDatadogAgentSql:
     - log: "## Install Datadog agent on ${this}"
     - if (settings.mode == 'production'):
         forEach(nodes.${this}):
-          cmd[${@i.id}]: |- 
-            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)" 
+          cmd[${@i.id}]: |-
+            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)"
             echo "hostname: ${this}.${@i.id}" >> /etc/datadog-agent/datadog.yaml
             sed -i 's/# logs_enabled: false/logs_enabled: true/' /etc/datadog-agent/datadog.yaml
             echo "tags:" >> /etc/datadog-agent/datadog.yaml
@@ -452,13 +452,13 @@ actions:
             wget -O /etc/cron.d/set_dd_tags_cron ${baseUrl}/configs/set_dd_tags_cron
             chmod u+x /usr/local/bin/set_dd_tags.sh
             systemctl restart crond datadog-agent
-          user: root 
-            
+          user: root
+
   setupDatadogAgentPerNode:
     - log: "## Install Datadog agent on ${this}"
     - if (settings.mode == 'production'):
-        - cmd[${this}]: |- 
-            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)" 
+        - cmd[${this}]: |-
+            DD_API_KEY=${globals.datadog_key} bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)"
             echo "hostname: cp.${this}" >> /etc/datadog-agent/datadog.yaml
             sed -i 's/# logs_enabled: false/logs_enabled: true/' /etc/datadog-agent/datadog.yaml
             echo "tags:" >> /etc/datadog-agent/datadog.yaml
@@ -475,11 +475,11 @@ actions:
             wget -O /etc/cron.d/set_dd_tags_cron ${baseUrl}/configs/set_dd_tags_cron
             chmod u+x /usr/local/bin/set_dd_tags.sh
             systemctl restart crond datadog-agent
-          user: root 
+          user: root
 
 success: /text/success.md
 settings:
-  fields: 
+  fields:
   - name: dxVersion
     type: text
     caption: Jahia DX version
@@ -512,17 +512,17 @@ settings:
     name: stack
     default: mariadb-dockerized
     required: true
-    values:        
+    values:
       - value: mysql
         caption: MySQL CE
       - value: mariadb-dockerized
         caption: MariaDB
-    
+
   - caption: DB topology
     type: list
     name: dbscheme
-    required: true      
-    dependsOn:                 
+    required: true
+    dependsOn:
       stack:
           mysql:
             - value: slave
@@ -532,9 +532,9 @@ settings:
             - value: single
               caption: Single Group Replication
             - value: multi
-              caption: Multi Group Replication              
+              caption: Multi Group Replication
 
-          mariadb-dockerized:    
+          mariadb-dockerized:
             - value: lonely
               caption: One, lonely, sad and single master
             - value: slave
@@ -553,30 +553,30 @@ settings:
     inputType: hidden
     type: list
     name: dbnodeType
-    dependsOn:                 
+    dependsOn:
       stack:
           mysql:
             - value: mysql
-          mariadb-dockerized:    
+          mariadb-dockerized:
             - value: mariadb-dockerized
 
   - caption: None
     inputType: hidden
     type: list
     name: dbnodes
-    dependsOn:                 
+    dependsOn:
       scheme:
           lonely:
             - value: 1
           slave:
             - value: 2
-          master:    
+          master:
             - value: 2
           single:
             - value: 3
-          multi:    
+          multi:
             - value: 3
-          galera:    
+          galera:
             - value: 3
 
   - name: regions
