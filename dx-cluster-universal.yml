@@ -127,6 +127,7 @@ nodes:
   - nodeType: ${globals.dbnodeType}
     nodeGroup: sqldb
     count: ${globals.dbnodes}
+    cloudlets: 40
     #    cluster:
     #      scheme: "${settings.dbscheme}"
     #      db_user: ${globals.db_user}
