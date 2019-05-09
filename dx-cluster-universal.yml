@@ -212,26 +212,26 @@ onAfterServiceScaleOut[cp]:
     - setupDatadogAgentPerNode: ${@i.id}
 
 onBeforeRedeployContainer:
-  - cmd [cp,proc]:
-    rm -rf $DATA_PATH/jahia/*
+  - cmd[cp,proc]:
+      - rm -rf $DATA_PATH/jahia/*
 
 onAfterRedeployContainer[cp]:
   - copyApp: cp
   - if (settings.mode == 'development'):
-    - installMaven: cp
+      - installMaven: cp
   - cmd[cp]:
-    - chkconfig --add tomcat
-    - chkconfig --level 3 tomcat on
-    - service tomcat start
+      - chkconfig --add tomcat
+      - chkconfig --level 3 tomcat on
+      - service tomcat start
 
 onAfterRedeployContainer[proc]:
   - copyApp: proc
   - if (settings.mode == 'development'):
-    - installMaven: proc
+      - installMaven: proc
   - cmd[proc]:
-    - chkconfig --add tomcat
-    - chkconfig --level 3 tomcat on
-    - service tomcat start
+      - chkconfig --add tomcat
+      - chkconfig --level 3 tomcat on
+      - service tomcat start
 
 #-- Actions --
 
@@ -263,12 +263,12 @@ actions:
 
   setupSqlDB:
     - if (globals.dbscheme == "galera"):
-      - install:
-        jps: https://raw.githubusercontent.com/jelastic-jps/mysql-cluster/master/scripts/galera-configuration.jps
-        shortdomain: ${settings.shortdomain}
-        settings:
-          db_user: ${globals.db_user}
-          db_pass: ${globals.db_pass}
+        - install:
+          jps: https://raw.githubusercontent.com/jelastic-jps/mysql-cluster/master/scripts/galera-configuration.jps
+          shortdomain: ${settings.shortdomain}
+          settings:
+            db_user: ${globals.db_user}
+            db_pass: ${globals.db_pass}
 
 
     - log: "## Set good mysql owners and right on ${this}"
@@ -280,11 +280,11 @@ actions:
         service mysql start
       user: root
     - if (settings.dbscheme == 'lonely'):
-      - log: "## We just need one lonely, single, master db node, so let's handle it"
-      - cmd[${nodes.sqldb.master.id}]: |-
-          wget -O setupUser.sh ${baseUrl}/scripts/setupUser.sh
-          bash setupUser.sh ${globals.db_user} ${globals.db_pass}
-        user: root
+        - log: "## We just need one lonely, single, master db node, so let's handle it"
+        - cmd[${nodes.sqldb.master.id}]: |-
+            wget -O setupUser.sh ${baseUrl}/scripts/setupUser.sh
+            bash setupUser.sh ${globals.db_user} ${globals.db_pass}
+          user: root
 
   createJahiaDatabase:
     - log: "## Create DX's Jahia database"
@@ -303,13 +303,13 @@ actions:
         mysql -u${globals.db_user} -p${globals.db_pass} -e "GRANT SELECT ON performance_schema.* TO 'datadog'@'localhost';"
       user: root
     - if ( settings.is_proxysql == 'true' ):
-      - log: "## Create Datadog database use on proxys"
-      - cmd[proxy]: |-
-          mysql -e "CREATE USER 'datadog'@'localhost' IDENTIFIED BY '${DB_USER_DATADOG}';"
-          mysql -e "GRANT REPLICATION CLIENT ON *.* TO 'datadog'@'localhost' WITH MAX_USER_CONNECTIONS 5;"
-          mysql -e "GRANT PROCESS ON *.* TO 'datadog'@'localhost';"
-          mysql -e "GRANT SELECT ON performance_schema.* TO 'datadog'@'localhost';"
-        user: root
+        - log: "## Create Datadog database use on proxys"
+        - cmd[proxy]: |-
+            mysql -e "CREATE USER 'datadog'@'localhost' IDENTIFIED BY '${DB_USER_DATADOG}';"
+            mysql -e "GRANT REPLICATION CLIENT ON *.* TO 'datadog'@'localhost' WITH MAX_USER_CONNECTIONS 5;"
+            mysql -e "GRANT PROCESS ON *.* TO 'datadog'@'localhost';"
+            mysql -e "GRANT SELECT ON performance_schema.* TO 'datadog'@'localhost';"
+          user: root
 
   installMaven:
     - log: "## Install Maven on ${this}"
