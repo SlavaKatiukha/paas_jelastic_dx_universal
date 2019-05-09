@@ -269,6 +269,7 @@ actions:
           settings:
             db_user: ${globals.db_user}
             db_pass: ${globals.db_pass}
+          nodeGroup: sqldb
 
 
     - log: "## Set good mysql owners and right on ${this}"
