@@ -177,7 +177,7 @@ onInstall:
       data:
         dxVersion: ${globals.dx_version}
         packageType: dev
-  - setupSqlDB
+  - setupSqlDB: sqldb
   - if (settings.skipStart != 'true'): createJahiaDatabase
   - if (settings.mode == 'production'): createDataDogUser
 
