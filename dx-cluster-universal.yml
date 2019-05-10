@@ -12,8 +12,8 @@ description:
     growth.
 baseUrl: https://github.com/Jahia/paas_jelastic_dx_universal/raw/1.0
 globals:
-  db_user: jahia-db-${fn.random}
-  db_pass: ${fn.password(20)}
+  db_user: ${settings.db_user}
+  db_pass: ${settings.db_pass}
   db_user_datadog: ${fn.password(20)}
   redis_pass: ${fn.password(20)}
   mngr_user: manager
@@ -495,6 +495,18 @@ settings:
     caption: Jahia tools password
     vtype: text
     required: true
+  - name: db_user
+    type: string
+    caption: database root user
+    vtype: text
+    required: true
+    inputType: hidden
+  - name: db_pass
+    type: string
+    caption: database root user password
+    vtype: text
+    required: true
+    inputType: hidden
   - name: browsingCount
     type: string
     caption: Number of DX browsing nodes
